@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+output/
+data/
+*.dump
+*.dump.gz
+*.lammpstrj*
+*.npy
+*.npz
+*.csv
+*.restart*
