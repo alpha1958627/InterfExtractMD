@@ -67,10 +67,40 @@ $$\rho_i=\frac{\#\{j\ne i:|\mathbf r_j-\mathbf r_i|_{\mathrm{PBC}}\le r_c\}}{4\p
 ```bash
 python -m pip install -r requirements.txt
 python examples/synthetic_demo.py
+python examples/make_demo_dump.py output/demo.dump.gz
+python -m interfextract output/demo.dump.gz --types 1 --methods hard gaussian neighbor --shape 24 24 40 --level 0.4 --reference-height 9 --output output/demo_analysis
 python -m unittest discover -s tests -v
 ```
 
 示例生成一片合成粒子液膜，依次运行三种方法，输出界面覆盖情况及功率归一化检查。README中的截面图展示真实MD构型，示例用于演示计算流程。
+
+### 直接处理 LAMMPS 轨迹
+
+命令行读取正交、三向周期的 `dump custom` 或 `.gz` 文件，按 `--types` 选择流体珠子。运行后得到原始高度、缺列掩膜、二维功率及环均 CSV，`summary.json` 记录实际帧数、参数和文件 SHA。
+
+```bash
+python -m interfextract film.dump.gz --types 1 --methods hard gaussian --shape 64 64 80 --start 100000 --stop 100200 --level 0.08 --reference-height 12 --gaussian-mode binned --width 0.22360679775 --output output/film_window
+```
+
+上述阈值、网格和步号仅作命令格式示例，应按自己的体系设置。CLI 高斯默认采用**硬分箱时均密度再卷积**，与下文 API `gaussian_density()` 的**直接粒子到网格赋值**分别记录。邻居法在每帧提取高度后平均。完整选项、两种高斯模式、时间平均顺序和缺列处理见[使用说明](docs/usage.md)。
+
+### 二维 FFT 和环均谱
+
+```python
+import numpy as np
+from interfextract import power_spectrum, radial_spectrum
+
+power, qx, qy = power_spectrum(height, box)
+bands = radial_spectrum(power, qx, qy, np.geomspace(0.2, 7.0, 40))
+q = bands["q_effective"]
+S = bands["power_mean"]
+```
+
+`power_spectrum()` 先减均值，再取 `abs(fft2(height)/height.size)**2`，满足 `power.sum() == height.var()`。`radial_spectrum()` 对二维波数环带内的实际模态作算术平均，输出模态数并跳过空环带。`S` 是每模功率，壳积分和 \(q^2\) 补偿需由使用者显式计算。详细公式与 CWT 的面积归一化见[频谱说明](docs/usage.md#fft-与环向平均)。
+
+### 探索性补列
+
+默认保留无交点列为 NaN。需要复现本次补列探索时，可显式指定 `--fill harmonic`，或调用 `harmonic_fill(height)`。它固定已知高度，在缺列区域求解周期离散拉普拉斯方程，保存的原高度和掩膜可用于核对重建范围。插值与高斯核都会影响短波功率，解释谱下降时需同时考察这些观察响应。[缺列处理说明](docs/usage.md#缺列与探索性补列)
 
 ### 使用自己的粒子坐标
 
@@ -135,7 +165,12 @@ h_mean_density, check = surface_from_density(
 
 ```text
 interfextract/            三种密度定义、界面提取、时间平均与二维功率
+interfextract/io.py       LAMMPS正交周期轨迹逐帧读取
+interfextract/spectrum.py 每模环均谱、显式周期调和补列
+interfextract/__main__.py 轨迹→界面→二维FFT→CSV命令行入口
 examples/synthetic_demo.py  无需私有数据的演示
+examples/make_demo_dump.py 三帧合成LAMMPS输入
+docs/usage.md             参数、输入输出、频谱公式及复现命令
 tests/                   质量、周期边界、真实交点、缺列和FFT检查
 docs/assets/             方法示意图与已授权展示的截面图
 ```

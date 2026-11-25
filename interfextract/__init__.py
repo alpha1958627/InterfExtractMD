@@ -7,6 +7,7 @@ from itertools import zip_longest
 import numpy as np
 from scipy.spatial import cKDTree
 from ._branch import density_roots, choose
+from .spectrum import radial_spectrum, harmonic_fill
 
 
 def _geometry(positions, box):
@@ -98,6 +99,23 @@ def average_density(frames, box, shape, *, method="gaussian", weights=None, **kw
     if total is None or weight_sum <= 0:
         raise ValueError("at least one positive-weight frame is required")
     return total / weight_sum
+
+
+def gaussian_filter_density(density, box, *, width=1 / np.sqrt(20), truncate=4.):
+    """Periodic Gaussian convolution of a precomputed number-density grid.
+
+    This is the binned-density observer used in the large WF studies. It is
+    distinct from gaussian_density's direct particle-to-grid assignment.
+    Linear convolution commutes with time averaging on a fixed grid.
+    """
+    from scipy.ndimage import gaussian_filter
+    rho = np.asarray(density, dtype=float)
+    _, _, lengths = _geometry(np.empty((0, 3)), box)
+    if rho.ndim != 3 or not rho.size or not np.isfinite(rho).all() or np.any(rho < 0):
+        raise ValueError("density must be a finite nonnegative 3D grid")
+    if not np.isfinite(width) or width <= 0 or not np.isfinite(truncate) or truncate <= 0:
+        raise ValueError("width and truncate must be finite and positive")
+    return gaussian_filter(rho, width / (lengths / rho.shape), mode="wrap", truncate=truncate)
 
 
 def surface_from_density(density, box, *, level, reference_height, branch="continuous"):
